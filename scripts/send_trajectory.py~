@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+import numpy
+from Quaternion import Quat
+import os
+import logging
+import select
+import sys
+import rospy
+import time
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+import scipy.misc
+from wam import WAM
+from collections import OrderedDict
+
+class MovePose(WAM):
+
+    """Docstring for ReadPose. """
+
+    def __init__(self):
+        """TODO: to be defined1. """
+        super(MovePose,self).__init__()
+        self.pose_ready = False
+        self.joint_ready = False
+        self.t0 = time.time()
+        self.pause = False
+
+    def _time(self):
+        return time.time()-self.t0
+
+def GetChar(Block=False):
+    if Block or select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+        return sys.stdin.read(1)
+    return None
+
+
+def main(args):
+    rospy.init_node('send_trajectory', anonymous=True)
+
+    traj_source = "/home/robotics/quick_catkin/src/lfd/pos_1.txt"
+    #traj_source= rospy.get_param('traj',
+    #            os.path.join(os.path.expanduser("~"),'trajs'))
+
+    f = open(traj_source)
+    lines = f.readlines()
+
+    controls = OrderedDict({"oneLine":'o',
+                "tenLines":'t',
+                "allLines":'a',
+                "go home": 'h',
+                "terminate": 'x',
+                "go to init point":'s'})
+    for k,v in controls.items():
+        rospy.loginfo("to {} press {}".format(k,v))
+
+    count_records = 0
+    MP = MovePose()
+    step_size = 10
+    num_step = 10
+    pointer = 0
+    while True:
+        command = GetChar()
+        time.sleep(0.1)
+        if command=='o':
+            items = lines[pointer].split(' ')
+            pose = [float(x) for x in items[0:3]]
+            MP.pose_move(pose)
+            pointer += 1
+
+        if command=='t':
+            for i in range(pointer,pointer+num_step*step_size,step_size):
+                items = lines[i].split(' ')
+                pose = [float(x) for x in items[0:3]]
+                MP.pose_move(pose)
+            pointer += num_step*step_size
+
+        if command=='a':
+            for i in range(pointer,len(lines),step_size):
+                items = lines[i].split(' ')
+                pose = [float(x) for x in items[0:3]]
+                MP.pose_move(pose)
+
+        if command=='x':
+            rospy.loginfo("shutting down the read_pose node")
+            break
+
+        if command=='h':
+            rospy.loginfo("going home")
+            pointer = 0
+            MP.go_home()
+
+        if command=='s':
+            rospy.loginfo("going to the init position")
+            pointer = 0
+            MP.go_init_pose()
+
+if __name__ == '__main__':
+    main(sys.argv)
+

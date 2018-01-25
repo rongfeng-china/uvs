@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+import numpy as np
+from Quaternion import Quat
+import os
+import logging
+import select
+import sys
+import rospy
+import time
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+import scipy.misc
+from wam import WAM
+from collections import OrderedDict
+import geometry_msgs.msg 
+
+from utils import quaternion_from_matrix
+import time
+
+class MovePose(WAM):
+
+    def __init__(self):
+        """TODO: to be defined1. """
+        super(MovePose,self).__init__()
+        self.pose_ready = False
+        self.joint_ready = False
+        self.t0 = time.time()
+        self.pause = False
+        
+
+    def _time(self):
+        return time.time()-self.t0
+
+def GetChar(Block=False):
+    if Block or select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+        return sys.stdin.read(1)
+    return None
+
+
+def main(args):
+    rospy.init_node('send_trajectory', anonymous=True)
+
+    pos_source = "/home/robotics/quick_catkin/src/lfd/pos_3.txt" #"/home/robotics/Documents/code/icra-lfd-tutorial-master/seds/SEDS_Cpp_lib/demonstrations/gt_pos.txt"#
+    orient_source = "/home/robotics/quick_catkin/src/lfd/or_3.txt" #"/home/robotics/Documents/code/icra-lfd-tutorial-master/seds/SEDS_Cpp_lib/demonstrations/gt_or.txt"#
+    #traj_source= rospy.get_param('traj',
+    #            os.path.join(os.path.expanduser("~"),'trajs'))
+
+    f = open(pos_source)
+    f2 = open(orient_source)
+    lines = f.readlines()
+    lines2 = f2.readlines()
+
+    controls = OrderedDict({"oneLine":'o',
+                "tenLines":'t',
+                "allLines":'a',
+                "go home": 'h',
+                "terminate": 'x',
+                "go to init point":'s'})
+    for k,v in controls.items():
+        rospy.loginfo("to {} press {}".format(k,v))
+
+    count_records = 0
+    MP = MovePose()
+    step_size = 20 # 30
+    num_step = 10 # 10 
+    pointer = 0
+    while True:
+        command = GetChar()
+        time.sleep(0.1)
+        if command=='o':   # safe pose: 0.08,0.1,0.8,
+            # pose 3 values for position, R 9 values for quaternion matrix
+            items = lines[pointer].split(',')
+            items2 = lines2[pointer].split(',')	    
+            pos = [float(x) for x in items[0:3]]
+            q = np.array([float(x2) for x2 in items2[0:4]])
+            #R = np.array([float(x2) for x2 in items2[0:9]]).reshape(3,3)
+            #pos = np.array([0,0,0]).reshape((3,1))
+            #R = np.array([-1,0,0,0,0,1,0,1,0]).reshape(3,3)
+            #q = quaternion_from_matrix(R)
+            #q = np.array([0.49526,-0.52660,0.42444,0.54522])
+	    #pos = np.array([0.58508956,0.30869446,0.2508189])
+            #q = np.array([0.,-1,0,0.])
+            #pos = np.array([0.08,0.1,0.8])
+            #q = np.array([0, -.707, 0, 0.707])
+            #print (pos)
+            #print (q)  #truth: 0.49526,-0.52660,0.42444,0.54522  get: 0.96484827  0.15853846 -0.13248357 -0.16242378
+            pose = np.concatenate([pos,q]) #7numbers
+	    print pose
+            MP.move_to_pose(pose)
+	    #pos = np.array([0.3, 0, .5, 0, -.707, 0, 0.707])
+	    #MP.pose_move(pos)
+            time.sleep(2)
+            #MP.hold(False)
+            #print('position ok')
+            #kp = np.array([1.,1.,1.])
+            #kd = np.array([0.005,0.005,0.005])
+            #ori_split.orientation=np.array([ 0. ,-0.707, 0., 0.707 ]) 
+            #ori_split.kp_gain= np.array([ 0.0, 0.0, 0.0])
+            #ori_split.kd_gain = np.array([ 0.0, 0.0 , 0.0])
+            #MP.ori_split_move(q,kp,kd)
+            #MP.ori_move(q)
+	    #time.sleep(2)
+            #MP.hold_ori(False)
+            pointer += 1
+
+        if command=='t':
+            for i in range(pointer,pointer+num_step*step_size,step_size):
+                items = lines[i].split(',')
+		items2 = lines2[i].split(',')
+                pos = [float(x) for x in items[0:3]]
+                q = np.array([float(x2) for x2 in items2[0:4]])
+		#R = np.array([float(x2) for x2 in items2[0:9]]).reshape(3,3)
+		#q = quaternion_from_matrix(R)
+                #MP.pose_move(pos)
+                pose = np.concatenate([pos,q]) #7numbers
+	        print pose
+                MP.move_to_pose(pose)
+		time.sleep(3)
+		#MP.hold(False)
+		print('position ok')
+		#kp = np.array([1.,1.,1.])
+		#kd = np.array([0.005,0.005,0.005])
+		#ori_split.orientation=np.array([ 0. ,-0.707, 0., 0.707 ]) 
+		#ori_split.kp_gain= np.array([ 0.0, 0.0, 0.0])
+		#ori_split.kd_gain = np.array([ 0.0, 0.0 , 0.0])
+		#MP.ori_split_move(q,kp,kd)
+            pointer += num_step*step_size
+
+        if command=='a':
+            for i in range(pointer,len(lines),step_size): #len(lines)
+                items = lines[i].split(',')
+		items2 = lines2[i].split(',')
+                pos = [float(x) for x in items[0:3]]
+                q = np.array([float(x2) for x2 in items2[0:4]])
+		#R = np.array([float(x2) for x2 in items2[0:9]]).reshape(3,3)
+		#q = quaternion_from_matrix(R)
+                #print (pos)
+                #print (q)
+                #MP.pose_move(pos)
+		#time.sleep(3)
+		#MP.hold(False)
+		#print('position ok')
+		#kp = np.array([1.,1.,1.])
+		#kd = np.array([0.005,0.005,0.005])
+		#ori_split.orientation=np.array([ 0. ,-0.707, 0., 0.707 ]) 
+		#ori_split.kp_gain= np.array([ 0.0, 0.0, 0.0])
+		#ori_split.kd_gain = np.array([ 0.0, 0.0 , 0.0])
+		#MP.ori_split_move(q,kp,kd)
+		#time.sleep(2)
+                pose = np.concatenate([pos,q]) #7numbers
+	        #print pose
+                MP.move_to_pose(pose)
+		#time.sleep(1)
+
+        if command=='x':
+            rospy.loginfo("shutting down the read_pose node")
+            break
+
+        if command=='h':
+            q = np.array([1,0,0,0])
+            kp = np.array([0.,0.,0.])
+	    kd = np.array([0.0,0,0])
+	    MP.ori_split_move(q,kp,kd)
+            rospy.loginfo("going home")
+            pointer = 0
+            MP.go_home()
+
+        if command=='s':
+            q = np.array([1,0,0,0])
+            kp = np.array([0.,0.,0.])
+	    kd = np.array([0.0,0,0])
+	    MP.ori_split_move(q,kp,kd)
+            rospy.loginfo("going to the init position")
+            pointer = 0
+            MP.go_init_pose()
+
+if __name__ == '__main__':
+    main(sys.argv)
+

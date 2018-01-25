@@ -1,0 +1,120 @@
+#!/usr/bin/env python
+import numpy
+from Quaternion import Quat
+import os
+import logging
+import sys
+import rospy
+import cv2
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
+import scipy.misc
+from wam import WAM
+import pdb
+data = 0
+def gen_data(image, pose, joint):
+    print 'gen_data'
+    image = scipy.misc.imresize(image, (224,224))
+    p = [pose.position.x, pose.position.y, pose.position.z, pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+    j = joint.position # 4 tuple
+    return image, p , j
+
+class image_converter:
+    def __init__(self):
+        print "image converter"
+        #cv2.namedWindow("Image window", 1)
+        #self.bridge = CvBridge()
+        #self.image_sub = rospy.Subscriber("/camera/rgb/image_rect_color",Image,self.callback)
+        self.wam = WAM()
+        self.images = None
+        self.poses = None
+        self.save_path = "/home/robotics/quick_catkin/src/uvs/images/"
+        self.saving = False
+        self.downsample_rate = 1
+        self.instance_counter = 1
+        #self.calib = calibration()
+
+
+    def callback(self,data):
+        print 'callback'
+        try:
+            #cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            image, pose, joint = gen_data(cv_image, self.wam.last_tool_pose,self.wam.last_joint_pose)
+            #print (self.calib.get_object2camera_trans(pose))
+            print pose
+            print joint
+
+            if self.instance_counter % self.downsample_rate is not 0:
+                pass
+            else:
+                print ("reading image number %s"%(str(self.instance_counter//self.downsample_rate)))
+                if self.images == None:
+                    self.images = [image]
+                    self.poses = [pose]
+                    self.joints = [joint]
+                else:
+                    self.images.append(image)
+                    self.poses.append(pose)
+                    self.joints.append(joint)
+
+            self.instance_counter = self.instance_counter + 1
+
+        except CvBridgeError as e:
+            print(e)
+
+        cv2.imshow("Image window", cv_image)
+        command = cv2.waitKey(3)
+        if chr(command & 255)=='x':
+            self.image_sub.unregister()
+            if self.saving:
+                print ("saving the data. it may take a while")
+                self.save_data()
+            print("unsubscribed from image topic")
+
+    def save_data(self):
+        numpy.save(self.save_path + "images.npy", numpy.asarray(self.images))
+        numpy.save(self.save_path + "poses.npy", numpy.asarray(self.poses))
+        numpy.save(self.save_path + "joints.npy", numpy.asarray(self.joints))
+
+class calibration:
+    def __init__(self, base2kinect_trans_path = None, kinect2object_trans_path = None):
+        if base2kinect_trans_path == None:
+            base2kinect_trans_path = os.environ['ROS_PACKAGE_PATH'].split(':')[0] + "/wam_calibration/kinect_wam_transform.txt"
+        self.K2B = read_txt_trans(base2kinect_trans_path)
+
+        if kinect2object_trans_path == None:
+            kinect2object_trans_path = os.environ['ROS_PACKAGE_PATH'].split(':')[0] + "/wam_calibration/kinect2object_trans.npy"
+        self.O2K = numpy.load(kinect2object_trans_path)
+
+    def get_object2camera_trans(self, camera_pose):
+        #camera_pose = [x,y,z,q1,q2,q3,q4]
+        self.C2B = numpy.eye(4)
+        self.C2B[0:3,0:3] = Quat(camera_pose[3:]).transform
+        self.C2B[0,3] = camera_pose[0]
+        self.C2B[1,3] = camera_pose[1]
+        self.C2B[2,3] = camera_pose[2]
+        dot = numpy.dot
+        return dot(dot(numpy.linalg.inv(self.C2B), self.K2B), self.O2K)
+
+
+def read_txt_trans(path):
+    f = open(path)
+    trans = numpy.array([])
+    for x in f.read().split():
+        trans = numpy.append(trans, float(x))
+    return trans.reshape((4,4))
+
+
+def main(args):
+    print "main"
+    ic = image_converter()
+    rospy.init_node('image_converter', anonymous=True)
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        print("Shutting down")
+        cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    main(sys.argv)

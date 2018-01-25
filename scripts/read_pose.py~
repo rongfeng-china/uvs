@@ -1,0 +1,159 @@
+#!/usr/bin/env python
+import roslib
+import sys, rospy, cv2, os, rosgraph.masterapi
+import numpy
+import numpy as np
+import math
+from transformations import euler_from_quaternion
+from Quaternion import Quat
+import os
+import logging
+import select
+import time
+from std_msgs.msg import String
+from sensor_msgs.msg import Image, CompressedImage,RegionOfInterest
+from cv_bridge import CvBridge, CvBridgeError
+import scipy.misc
+from wam import WAM
+
+class ReadPose(WAM):
+    def __init__(self, output_path='.'):
+        self.node_name = "cv_bridge_demo"
+        super(ReadPose,self).__init__()
+        # image related
+        self.cv_window_name = self.node_name
+        cv2.namedWindow(self.cv_window_name, 1)
+        cv2.moveWindow(self.cv_window_name, 25, 75) 
+        self.bridge = CvBridge()
+        self.image_sub = rospy.Subscriber("/usb_cam/image_raw", Image, self.image_callback)
+        self.display_image = None
+
+        self.pose_ready = False
+        self.joint_ready = False
+        self.t0 = time.time()
+        self.output_file = open(output_path, 'w')
+        self.pause = False
+        self.dq2,self.dq3,self.dq4,self.dq5,self.dq6,self.dq7 = .002,.002,.002,.002,.002,.002
+        self.dL,self.dx, self.dy,self.dz,self.dax,self.day,self.daz,self.daw=0.1,0.2,0.3,0.3,0.0,0.5,0.6,0.01
+        self.alpha, self.lamba = 0.1, 0.3
+        self.counter = 0
+
+    def _time(self):
+        return time.time()-self.t0
+
+    def image_callback(self, ros_image):
+        try:
+            frame = self.bridge.imgmsg_to_cv2(ros_image, "bgr8")
+        except CvBridgeError, e:
+            print e       
+        frame = np.array(frame, dtype=np.uint8)
+        self.display_image = frame
+        #self.display_image = self.process_image(frame)             
+        #cv2.imshow(self.node_name, self.display_image)      
+        # Process any keyboard commands
+        '''self.keystroke = cv2.waitKey(5)
+        if 32 <= self.keystroke and self.keystroke < 128:
+            cc = chr(self.keystroke).lower()
+            if cc == 'q':
+                # The user has press the q key, so exit
+                rospy.signal_shutdown("User hit q key to quit.")'''
+                
+    def tool_pose_cb(self, data):
+        p = [data.pose.position.x,
+             data.pose.position.y,
+             data.pose.position.z,
+             data.pose.orientation.x,
+             data.pose.orientation.y,
+             data.pose.orientation.z,
+             data.pose.orientation.w]
+        self.last_tool_pose = p
+        if self.joint_ready:
+            self.save_data_point()
+            self.joint_ready = False
+            self.pose_ready = False
+        else:
+            self.pose_ready = True
+
+    def joint_pose_cb(self, data):
+        self.last_joint_pose = data.position
+        if self.pose_ready:
+            self.save_data_point()
+            self.joint_ready = False
+            self.pose_ready = False
+        else:
+            self.joint_ready = True
+
+    def display(self):
+        if self.pause:
+            return
+        print 'display\n'
+        print self.last_tool_pose
+        print self.last_joint_pose
+        if (not self.display_image is None):
+                cv2.imshow(self.node_name, self.display_image)
+                cv2.waitKey(5)
+
+    def save_data_point(self, seperator=","):
+        if self.pause:
+            return
+        '''rospy.loginfo("{} {} {}".format(self._time(),
+                                        self.last_tool_pose,
+                                        self.last_joint_pose))'''
+        self.output_file.write("{0:.5f}".format(self._time())+seperator)
+        for v in self.last_tool_pose:
+            self.output_file.write("{0:.5f}".format(v)+seperator)
+        for v in self.last_joint_pose:
+            self.output_file.write("{0:.5f}".format(v)+seperator)
+        self.output_file.write("\n")
+
+    def update_output_file(self, new_file):
+        self.output_file.close()
+        self.output_file = open(new_file,'w')
+
+    #def uvs_start(self):
+        
+        
+
+def GetChar(Block=False):
+    if Block or select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+        return sys.stdin.read(1)
+    return None
+
+def main(args):
+    controls = {"record": 'r',
+                "pauese": 'p',
+                "stop" : 's',
+                "terminate": 'x',
+                "display": 'd' }
+    rospy.init_node('read_pose', anonymous=True)
+    for k,v in controls.items():
+        rospy.loginfo("to {} press {}".format(k,v))
+
+    traj_root = rospy.get_param('~output_root',
+                os.path.join(os.path.expanduser("~"),'task_back'))
+    count_records = 0
+    while True:
+        command = GetChar()
+        if command=='x':
+            rospy.loginfo("shutting down the read_pose node")
+            break
+        if command=='r':
+            if "RP" not in locals():
+                RP = ReadPose(os.path.join(traj_root,"_"+str(count_records)+'.txt'))
+            else:
+                RP.update_output_file(os.path.join(traj_root,"_"+str(count_records)+'.txt'))
+                RP.pause = False
+        if command=='p':
+            RP.pause = True
+        if command=='s':
+            RP.pause = True
+            count_records += 1
+            RP.output_file.close()
+            rospy.loginfo("record is saved at {}".format(traj_root+"_"+str(count_records)+'.txt'))
+        if command == 'd':
+            RP.display()
+
+
+if __name__ == '__main__':
+    main(sys.argv)
+

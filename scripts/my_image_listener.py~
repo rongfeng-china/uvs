@@ -1,0 +1,47 @@
+#!/usr/bin/env python
+
+import roslib
+roslib.load_manifest('my_image')
+import sys, rospy, cv2, os, rosgraph.masterapi
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
+from sensor_msgs.msg import CompressedImage
+from my_image_publisher import my_image_publisher
+
+
+
+
+def show_image(cam,start = 0):
+    
+    k = 1
+    while not rospy.is_shutdown():
+    	(img,imgstamp) = cam.get_img()
+
+        if img == None:
+	        #print "nothing"
+		continue
+        print "Image", imgstamp, "\n***"
+
+        (rows,cols,channels) = img.shape
+   	if cols > 60 and rows > 60 :
+     		cv2.circle(img, (50,50), 10, 255)
+        grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    	grey = cv2.blur(grey,(7,7))
+        cv2.imshow("Image window", grey)
+        k = cv2.waitKey(2)
+
+  
+def main(args):
+  
+  cv2.namedWindow("Image window",1)
+  try:
+    #rospy.spin()
+    cam = my_image_publisher()
+    show_image(cam,0)
+  except KeyboardInterrupt:
+    print "Shutting down"
+  cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    main(sys.argv)

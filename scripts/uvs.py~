@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+from Quaternion import Quat
+import os
+import logging
+import select
+import sys
+import rospy
+import time
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+import scipy.misc
+from wam import WAM
+import numpy as np
+import math
+from transformations import euler_from_quaternion
+
+dq2 = .002
+dq3 = .002
+dq4 = .002
+dq5 = .002
+dq6 = .002
+dq7 = .002
+
+dL = .1
+dx = .2
+dy = .3
+dz = .3
+dax = 0.
+day = .5
+daz = .6
+daw = .01
+
+alpha = .1
+lamda = .1
+
+# quaternion = [-0.433859,0.509387,-0.572554,0.475489]
+# [0.475489,0.433859,-0.509387,0.572554]
+#angles = euler_from_quaternion([w,-x,-y,-z])
+#print angles
+counter = 0
+    
+
+while counter < 4: ###dL >0.0001:
+    if counter == 0:
+        # read Joint(q1,q2,q3,q4,q5,q6,q7), cartesian pose(x,y,z,qtx,qty,qtz,qtw), pixel L
+        
+        # anglex,angley,anglez = euler_from_quaternion([qtw,-qtx,-qty,-qtz])
+        # send robot to Joint(q1,q2,q3,q4,q5,q6,q7)+(0,.002,.002,.002,.002,.002,.002)
+        # read cartesian pose(x2,y2,z2,qtx2,qty2,qtz2,qtw2), pixel L2
+        # anglex2,angley2,anglez2 = euler_from_quaternion([qtw2,-qtx2,-qty2,-qtz2])
+        # dL,dx,dy,dz,dax,day,daz = L2-L, x2-x,y2-y, z2-z,anglex2-anglex,angley2-angley,anglez2-anglez    ## with real robot , save angles_current
+        pass       
+    else:
+        angles_previous = angles_current
+        qtx,qty,qtz,qtw = [-0.433859,0.509387,-0.572554,0.475489] # current quaternion: read from the robot
+        angles_current = euler_from_quaternion([qtw,-qtx,-qty,-qtz])
+        dax,day,daz,daw = angles_current-angles_previous     
+        # update cartesian values
+        L,x,y,z,qtx,qty,qtz,qtw = L2,x2,y2,z2,qtx2,qty2,qtz2,qtw2
+        # read cartesian pose(x2,y2,z2,qtx2,qty2,qtz2,qtw2), pixel L2   # with real robot
+        dL,dx,dy,dz,dax,day,daz = L2-L, x2-x,y2-y, z2-z,anglex2-anglex,angley2-angley,anglez2-anglez
+        
+    dq = np.array([dq2,dq3,dq4,dq5,dq6,dq7])
+    dE = np.array([dL,dx,dy,dax,day,daz])
+    J_k_transpose = np.array([dE/dq2,dE/dq3,dE/dq4,dE/dq5,dE/dq6,dE/dq7])
+    J_k = np.transpose(J_k_transpose)
+
+    mid_step = np.transpose(dE)-np.dot(J_k,np.transpose(dq))
+    mid_step2 = np.dot(dq,np.transpose(dq))
+    J_k_update = J_k + alpha*np.dot(mid_step,dq)/mid_step2
+
+    try:
+        j_update = -lamda*np.dot(np.linalg.inv(J_k_update),np.transpose(dE))
+    except:
+        print 'inverse not work'
+        pass
+
+    print j_update
+    # robot execute q_update
+    counter += 1
+
+    dL = dL - .0005
+    counter += 1
+
+
+
+
+
+
+
